@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPAS Checklist - A4 Multi-página</title>
+    <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        :root {
+            --page-width: 210mm;
+            --page-height: 297mm;
+        }
+        body { background: #2c3e50; font-family: 'Arial', sans-serif; margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
+        
+        #alert-msg {
+            position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+            background: #e74c3c; color: white; padding: 8px 20px; border-radius: 30px;
+            display: none; z-index: 2000; font-weight: bold; font-size: 12px;
+        }
+
+        .page {
+            background: white; width: var(--page-width); height: var(--page-height);
+            margin-bottom: 10px; padding: 10mm; box-shadow: 0 0 15px rgba(0,0,0,0.5);
+            display: flex; flex-direction: column; box-sizing: border-box;
+            overflow: hidden; position: relative;
+        }
+
+        /* TABLA ENCABEZADO */
+        .header-table { width: 100%; border-collapse: collapse; margin-bottom: 5px; }
+        .header-table td { border: 1px solid black; padding: 3px; font-size: 9px; text-align: center; vertical-align: middle; }
+
+        /* GRID DATOS (Solo aparecerá en página 1) */
+        .pilot-data-container { 
+            border: 1px solid black; 
+            padding: 5px 8px; 
+            margin-bottom: 8px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 4px;
+        }
+        .data-row { display: flex; align-items: center; font-size: 10px; width: 100%; gap: 8px; }
+        .input-box { border: none; border-bottom: 1px solid #000; outline: none; background: transparent; font-size: 10px; flex-grow: 1; padding: 0; }
+        .signature-box { border-bottom: 1px solid black; height: 12px; min-width: 120px; flex-grow: 1; }
+
+        /* TABLA CHECKLIST */
+        .checklist-table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+        .checklist-table td { border: 1px solid black; padding: 2px 4px; font-size: 9.5px; vertical-align: middle; height: 18px; }
+        
+        .section-header-row td { 
+            background: #eee; 
+            font-weight: bold; 
+            text-transform: uppercase; 
+            text-align: center; 
+        }
+        
+        .header-label { font-size: 8px; text-align: center; width: 35px; font-weight: bold; }
+        .col-check { width: 35px; text-align: center; }
+        
+        .activity-input { width: 100%; border: none; outline: none; background: transparent; font-size: 9.5px; display: block; }
+
+        .comment-row td { background-color: #fcfcfc; border: 1px dashed #777; padding: 4px; }
+        .spacer-row td { border: none !important; height: 4px; }
+
+        .obs-container { margin-top: 5px; display: none; border: 1px solid #000; padding: 4px; background: #fff; }
+        .obs-header { background: #eee; padding: 2px 4px; font-weight: bold; font-size: 9px; border-bottom: 1px solid #000; }
+        .obs-box { width: 100%; height: 40px; border: none; resize: none; font-family: inherit; font-size: 9.5px; outline: none; }
+
+        .footer-eye { margin-top: auto; padding-top: 3px; border-top: 1.5px solid black; font-size: 8.5px; text-align: center; line-height: 1.2; }
+
+        .controls { position: fixed; left: 10px; top: 10px; display: flex; flex-direction: column; gap: 5px; z-index: 1000; }
+        button { padding: 8px 12px; cursor: pointer; border-radius: 4px; border: none; color: white; background: #222; font-weight: bold; font-size: 11px; }
+        .btn-green { background: #27ae60; }
+        .btn-blue { background: #2980b9; }
+
+        @media print {
+            .controls, #alert-msg { display: none !important; }
+            body { background: white; padding: 0; }
+            .page { margin: 0; box-shadow: none; page-break-after: always; border: none !important; height: var(--page-height); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="alert-msg">⚠️ Espacio límite A4: Creando Página Siguiente...</div>
+
+<div class="controls">
+    <button class="btn-green" onclick="addNewRow()">➕ Fila</button>
+    <button style="background: #e67e22" onclick="addCommentRow()">💬 Comentario</button>
+    <button class="btn-blue" onclick="addSection()">📂 Sección</button>
+    <button style="background: #8e44ad" onclick="toggleObservations()">📝 Obs.</button>
+    <button style="background: #c0392b" onclick="removeLastRow()">🗑️ Borrar</button>
+    <hr style="width:100%; opacity: 0.2;">
+    <button style="background: #000;" onclick="printChecklist()">🖨️ IMPRIMIR A4</button>
+</div>
+
+<div id="pages-container"></div>
+
+<template id="page-template">
+    <div class="page">
+        <table class="header-table">
+            <tr>
+                <td style="width:20%; font-weight: bold;">D´Armies</td>
+                <td style="width:55%;"><b>SISTEMA INTEGRADO DE GESTIÓN DE CALIDAD</b><br>RPAS - PRE-FLIGHT CHECK LIST</td>
+                <td>Fecha:<br><input type="text" class="input-box date-auto" style="text-align:center; font-weight:bold;"></td>
+            </tr>
+        </table>
+        
+        <div class="pilot-data-container">
+            <div class="data-row">
+                <span>Nombre del Piloto RPAS:</span>
+                <input type="text" class="input-box">
+            </div>
+            <div class="data-row">
+                <div style="display:flex; flex:1; gap:5px;">
+                    <span>Número de Licencia:</span>
+                    <input type="text" class="input-box">
+                </div>
+                <div style="display:flex; flex:1; gap:5px; align-items: center;">
+                    <span>Firma:</span>
+                    <div class="signature-box"></div>
+                </div>
+            </div>
+            <div class="data-row">
+                <div style="display:flex; flex:1; gap:5px;">
+                    <span>Hora de Inicio:</span>
+                    <input type="text" class="input-box h-inicio" readonly>
+                </div>
+                <div style="display:flex; flex:1; gap:5px;">
+                    <span>Hora de Término:</span>
+                    <input type="text" class="input-box h-termino" readonly placeholder="--:--">
+                </div>
+            </div>
+        </div>
+
+        <table class="checklist-table">
+            <tbody class="table-body"></tbody>
+        </table>
+        
+        <div class="obs-container">
+            <div class="obs-header">OBSERVACIONES:</div>
+            <textarea class="obs-box"></textarea>
+        </div>
+
+        <div class="footer-eye">
+            <p>Dirección: Jirón Callao N.° 836 - Tarma - Tarma - Junín.</p>
+            <p>Teléfonos: 980677193 - 940295722</p>
+	    <p>Correo Electrónico: darmies@hotmail.com - proyectos@grupodarmies.com
+        </div>
+    </div>
+</template>
+
+<script>
+    let pageCount = 0;
+    let obsVisible = false;
+    const initialTime = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+
+    function createNewPage() {
+        pageCount++;
+        const temp = document.getElementById('page-template');
+        const clone = temp.content.cloneNode(true);
+        const pageDiv = clone.querySelector('.page');
+        pageDiv.id = `page-${pageCount}`;
+        
+        // AUTO-FECHA
+        clone.querySelector('.date-auto').value = new Date().toLocaleDateString('es-ES');
+
+        // LÓGICA DE ELIMINACIÓN DE DATOS DEL PILOTO
+        if (pageCount > 1) {
+            const pilotData = clone.querySelector('.pilot-data-container');
+            if (pilotData) pilotData.remove();
+        } else {
+            // Solo en la página 1 ponemos la hora de inicio inicial
+            clone.querySelector('.h-inicio').value = initialTime;
+        }
+
+        document.getElementById('pages-container').appendChild(clone);
+        return pageDiv.querySelector('.table-body');
+    }
+
+    function checkOverflow(targetBody) {
+        const currentPage = targetBody.closest('.page');
+        const footer = currentPage.querySelector('.footer-eye');
+        const distance = footer.getBoundingClientRect().top - targetBody.getBoundingClientRect().bottom;
+
+        if (distance < 40) {
+            document.getElementById('alert-msg').style.display = 'block';
+            setTimeout(() => {
+                const newBody = createNewPage();
+                const lastRow = targetBody.lastElementChild;
+                if(lastRow) newBody.appendChild(lastRow);
+                document.getElementById('alert-msg').style.display = 'none';
+            }, 200);
+        }
+    }
+
+    function addSection(title = "PREVIO A DESPLAZAMIENTO A ZONA DE TRABAJO") {
+        let currentBody = document.querySelector(`#page-${pageCount} .table-body`) || createNewPage();
+        const tr = document.createElement('tr');
+        tr.className = "section-header-row";
+        tr.innerHTML = `
+            <td contenteditable="true">${title}</td>
+            <td class="header-label">APTO</td>
+            <td class="header-label">NO APTO</td>
+        `;
+        currentBody.appendChild(tr);
+        checkOverflow(currentBody);
+    }
+
+    function addNewRow() {
+        let currentBody = document.querySelector(`#page-${pageCount} .table-body`) || createNewPage();
+        const id = Math.random().toString(36).substr(2, 5);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="text" class="activity-input" placeholder="..."></td>
+            <td class="col-check"><input type="radio" name="r_${id}"></td>
+            <td class="col-check"><input type="radio" name="r_${id}"></td>
+        `;
+        currentBody.appendChild(tr);
+        checkOverflow(currentBody);
+    }
+
+    function addCommentRow() {
+        let currentBody = document.querySelector(`#page-${pageCount} .table-body`) || createNewPage();
+        const spacer = document.createElement('tr');
+        spacer.className = "spacer-row";
+        spacer.innerHTML = `<td colspan="3"></td>`;
+        currentBody.appendChild(spacer);
+
+        const tr = document.createElement('tr');
+        tr.className = "comment-row";
+        tr.innerHTML = `<td colspan="3"><input type="text" class="activity-input" placeholder="Nota/Comentario..."></td>`;
+        currentBody.appendChild(tr);
+        checkOverflow(currentBody);
+    }
+
+    function toggleObservations() {
+        obsVisible = !obsVisible;
+        const allObs = document.querySelectorAll('.obs-container');
+        allObs.forEach((el, idx) => {
+            el.style.display = (obsVisible && idx === allObs.length - 1) ? 'block' : 'none';
+        });
+        if(obsVisible) checkOverflow(document.querySelector(`#page-${pageCount} .table-body`));
+    }
+
+    function removeLastRow() {
+        const currentBody = document.querySelector(`#page-${pageCount} .table-body`);
+        if (currentBody && currentBody.lastElementChild) currentBody.removeChild(currentBody.lastElementChild);
+    }
+
+    function printChecklist() {
+        const hTermino = document.querySelector('.h-termino');
+        if (hTermino) {
+            hTermino.value = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        }
+        window.print();
+    }
+
+    window.onload = () => {
+        addSection();
+        for(let i=0; i<15; i++) addNewRow();
+    };
+</script>
+</body>
+</html>
